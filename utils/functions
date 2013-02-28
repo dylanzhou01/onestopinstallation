@@ -1,0 +1,174 @@
+#
+#    Copyright (C) 2013 Intel Corporation.  All rights reserved.
+#
+#    Licensed under the Apache License, Version 2.0 (the "License"); you may
+#    not use this file except in compliance with the License. You may obtain
+#    a copy of the License at
+#
+#         http://www.apache.org/licenses/LICENSE-2.0
+#
+#    Unless required by applicable law or agreed to in writing, software
+#    distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+#    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+#    License for the specific language governing permissions and limitations
+#    under the License.
+
+function add_config() {
+	configuration=$1
+	file=$2
+	flag=$(sudo cat "$file" | grep "$configuration")
+
+	if [ "$configuration" != "$flag" ]; then
+ 		cat "$configuration" >>  $file
+ 		echo "$configuration" | tee -a $file
+	fi	
+}
+
+function insertToLine(){
+   text=$(sed -n "$1p" $3)
+   if [[ "$text" != "$2" ]]; then
+       sed -i "$1i $2" $3
+   fi
+}
+
+function create_credential() {
+	add_config "export OS_TENANT_NAME=admin" "/etc/profile"
+	add_config "export OS_USERNAME=admin" "/etc/profile"
+	add_config "export OS_PASSWORD=$ADMIN_PASSWORD" "/etc/profile"
+	add_config "export OS_AUTH_URL="http://$AUTH_HOST:5000/v2.0/"" "/etc/profile"
+	add_config "export STACK_DIR="$STACK_DIR"" "/etc/profile"
+}
+
+function create_cinder_volume() {
+	#Notice: cinder-volumes MUST be in var/lib/cinder/volumes directory (Which is configured in /etc/tgt/conf.d/cinder.conf)
+	#TODO: compare tgt and iet
+	if [ ! -e /var/lib/cinder/volumes/cinder-volumes ]; then
+		dd if=/dev/zero of=/var/lib/cinder/volumes/cinder-volumes bs=1 count=0 seek=2G
+		losetup /dev/loop2 /var/lib/cinder/volumes/cinder-volumes
+		pvcreate /dev/loop2
+		vgcreate cinder-volumes /dev/loop2
+	fi
+}
+
+function create_glance_image() {
+	# Clear exist images
+    mysql -uroot -p${MYSQL_PASSWD} -e "DELETE FROM glance.images;"
+    rm -rf /var/lib/glance/images/*
+    
+    # Create default images
+	glance image-create --name cirros-0.3.0-x86_64 --is-public true --container-format bare --disk-format qcow2 < /home/openstack/images/cirros-0.3.0-x86_64-disk.img
+	glance image-create --name precise-server-cloudimg-amd64 --is-public true --container-format bare --disk-format qcow2 < /home/openstack/images/precise-server-cloudimg-amd64-disk1.img
+	if [[ "$ENABLED_SERVICES" =~ "vlan" ]]; then
+	    glance image-create --name cloudpipe --is-public true --container-format bare --disk-format qcow2 < /home/openstack/images/cloud-pipe-template.img
+	fi
+}
+
+# TODO: not tested
+function create_dhcp_network() {
+	# Cleare exist network
+	for uuid in `nova-manage network list | awk '{print $9}' | grep -v 'project'`
+	do
+	nova-manage network delete --uuid=$uuid
+	done
+	
+	#Create the network
+	nova-manage network create private --fixed_range_v4=$FIXIP_RANGE --num_networks=1 --bridge=br100 --bridge_interface=$COMPUTE_VM_ETH --network_size=$NETWORK_SIZE --multi_host=T
+	nova-manage network list
+}
+
+# TODO: not tested
+function create_vlan_network() {
+	# Cleare exist network
+	for uuid in `nova-manage network list | awk '{print $9}' | grep -v 'project'`
+	do
+	nova-manage network delete --uuid=$uuid
+	done
+	# get ID of yidong tenant
+	id_yidong=`keystone tenant-list | grep yidong | cut -d "|" -f 2 | tr -d ' '`
+	
+	# get ID of liantong tenant
+	id_liantong=`keystone tenant-list | grep liantong | cut -d "|" -f 2 | tr -d ' '`
+	
+	# create network for yidong tenant
+	nova-manage network create --vpn=1001 --label=vlan101 --fixed_range_v4=192.168.101.129/25 --vlan=101 --bridge=br101 --project_id=$id_yidong --num_networks=1 --network_size=128
+	nova-manage network create --vpn=1002 --label=vlan102 --fixed_range_v4=192.168.102.129/25 --vlan=102 --bridge=br102 --project_id=$id_liantong --num_networks=1 --network_size=128
+	
+	nova cloudpipe-create $id_yidong
+	nova cloudpipe-create $id_liantong
+}
+
+
+function create_quantum_network() {
+	# get ID of yidong tenant
+	tenant_id_yidong=`keystone tenant-list | grep yidong | cut -d "|" -f 2 | tr -d ' '`
+	
+	# get ID of liantong tenant
+	tenant_id_liantong=`keystone tenant-list | grep liantong | cut -d "|" -f 2 | tr -d ' '`
+	
+	quantum net-create --tenant-id $tenant_id_yidong $network_name_yd --provider:network_type vlan --provider:physical_network $VLAN_PHYSICAL_NET --provider:segmentation_id $vlan_number_yd
+	quantum subnet-create --tenant-id $tenant_id_yidong $network_name_yd $subnet_ip_yd --name $subnet_name_yd
+	quantum router-create --tenant-id $tenant_id_yidong $router_name_yd
+	router_id_yd=`quantum router-list | grep $router_name_yd | cut -d "|" -f 2 | tr -d " "`
+	subnet_id_yd=`quantum subnet-list | grep $subnet_name_yd | cut -d "|" -f 2 | tr -d " "`
+	quantum router-interface-add $router_id_yd $subnet_id_yd
+	
+	quantum net-create --tenant-id $tenant_id_liantong $network_name_lt --provider:network_type vlan --provider:physical_network $VLAN_PHYSICAL_NET --provider:segmentation_id $vlan_number_lt
+	quantum subnet-create --tenant-id $tenant_id_liantong $network_name_lt $subnet_ip_lt --name $subnet_name_lt
+	quantum router-create --tenant-id $tenant_id_liantong $router_name_lt
+	router_id_lt=`quantum router-list | grep $router_name_lt | cut -d "|" -f 2 | tr -d " "`
+	subnet_id_lt=`quantum subnet-list | grep $subnet_name_lt | cut -d "|" -f 2 | tr -d " "`
+	quantum router-interface-add $router_id_lt $subnet_id_lt
+	
+	# get ID of service tenant 
+	tenant_id_service=`keystone tenant-list | grep service | cut -d "|" -f 2 | tr -d ' '`
+	quantum net-create --tenant-id $tenant_id_service $network_name_ext --router:external=True
+	quantum subnet-create --tenant-id $tenant_id_service --allocation-pool start=$subnet_start_ip_ext,end=$subnet_end_ip_ext --gateway $subnet_gateway_ext $network_name_ext $subnet_ip_ext --enable_dhcp=False --name $subnet_name_ext
+	
+	network_id_ext=`quantum net-list | grep $network_name_ext | cut -d "|" -f 2 | tr -d " "`
+	subnet_id_ext=`quantum subnet-list | grep $subnet_name_ext | cut -d "|" -f 2 | tr -d " "`
+	quantum router-gateway-set $router_id_yd $network_id_ext
+	quantum router-gateway-set $router_id_lt $network_id_ext
+	
+	# add route only in controller node
+	router_ip_yd=`quantum port-list -- --device_id $router_id_yd --device_owner network:router_gateway | grep $subnet_id_ext | cut -d "|" -f 5 | cut -d ":" -f 3 | tr -d '"' | tr -d '}' | tr -d ' '`
+	router_ip_lt=`quantum port-list -- --device_id $router_id_lt --device_owner network:router_gateway | grep $subnet_id_ext | cut -d "|" -f 5 | cut -d ":" -f 3 | tr -d '"' | tr -d '}' | tr -d ' '`
+	
+	route add -net $subnet_ip_yd gw $router_ip_yd
+	route add -net $subnet_ip_lt gw $router_ip_lt
+	
+	# configuration of floating IP associated
+	# quantum floatingip-create --tenant-id $put_id_of_project_one $network_name_ext
+	# quantum port-list
+	# quantum floatingip-associate $put_id_floating_ip $put_id_vm_port
+	 
+}
+
+function get_software_source() {
+	if [ ! -e /home/openstack/software.tar.gz ]; then
+		wget $EASYSTACK_GIT_URL/software.tar.gz -P /home/openstack
+	fi
+}
+
+function get_images() {
+	if [ ! -e /home/openstack/images ]; then
+		mkdir /home/openstack/images
+	fi
+	
+	if [ ! -e /home/openstack/images/cirros-0.3.0-x86_64-disk.img ]; then
+	   wget $EASYSTACK_GIT_URL/images/cirros-0.3.0-x86_64-disk.img -P /home/openstack/images
+	fi
+	
+	if [[ "$ENABLED_SERVICES" =~ "vlan" ]]; then
+	    if [ ! -e /home/openstack/images/cloud-pipe-template.img ]; then
+		   wget $EASYSTACK_GIT_URL/images/cloud-pipe-template.img -P /home/openstack/images
+		fi
+	fi	
+	
+	if [ ! -e /home/openstack/images/precise-server-cloudimg-amd64-disk1.img ]; then
+	   wget $EASYSTACK_GIT_URL/images/precise-server-cloudimg-amd64-disk1.img -P /home/openstack/images
+	fi
+}
+
+function get_cloudpipe_id() {
+	VPN_IMAGE_ID=`glance image-list | grep cloudpipe | cut -d '|' -f 2 | tr -d ' '`
+}

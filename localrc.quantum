@@ -1,0 +1,96 @@
+MYSQL_PASSWD=pwd
+MYSQL_HOST=10.238.152.103
+AUTH_HOST=10.238.152.103
+AUTH_PORT=35357
+
+ADMIN_PASSWORD=admin
+SERVICE_TENANT_NAME=service
+SERVICE_PASSWORD=pwd
+SERVICE_TOKEN=ADMIN
+
+NOVA_DB_USER=nova
+NOVA_DB_PASSWD=pwd
+
+QUANTUM_DB_USER=quantum
+QUANTUM_DB_PASSWD=pwd
+
+KEYSTONE_DB_USER=keystone
+KEYSTONE_DB_PASSWD=pwd
+
+CINDER_DB_USER=cinder
+CINDER_DB_PASSWD=pwd
+
+CINDER_HOST=10.238.152.103
+GLANCE_HOST=10.238.152.103
+GLANCE_DB_USER=glance
+GLANCE_DB_PASSWD=pwd
+
+ENABLED_SERVICES=quantum
+VLAN_PHYSICAL_NET=physnet1
+#configuration for controller network
+#management network
+CONTROLLER_MANAGEMENT_ETH=eth1
+CONTROLLER_MANAGEMENT_IP=10.0.0.2
+CONTROLLER_MANAGEMENT_NETMASK=255.255.255.0
+
+#INTERNET network
+CONTROLLER_INTERNET_ETH=eth0
+CONTROLLER_INTERNET_IP=10.238.152.103
+CONTROLLER_INTERNET_NETMASK=255.255.255.0
+CONTROLLER_INTERNET_GATEWAY=10.238.152.2
+
+#configuration for network node
+#management network
+NETWORK_MANAGEMENT_ETH=eth1
+NETWORK_MANAGEMENT_IP=10.0.0.3
+NETWORK_MANAGEMENT_NETMASK=255.255.255.0
+
+#INTERNET network
+NETWORK_INTERNET_ETH=eth0
+NETWORK_INTERNET_IP=10.238.152.105
+NETWORK_INTERNET_NETMASK=255.255.255.0
+NETWORK_INTERNET_GATEWAY=10.238.152.2
+NETWORK_INTERNET_NETWORK=10.240.192.0
+
+#configuration for COMPUTE node
+#management network
+COMPUTE_MANAGEMENT_ETH=eth1
+COMPUTE_MANAGEMENT_IP=10.0.0.4
+COMPUTE_MANAGEMENT_NETMASK=255.255.255.0
+
+#INTERNET network
+COMPUTE_INTERNET_ETH=eth0
+COMPUTE_INTERNET_IP=10.238.152.103
+COMPUTE_INTERNET_NETMASK=255.255.255.0
+COMPUTE_INTERNET_GATEWAY=10.238.152.2
+
+
+FIXIP_RANGE=192.168.2.129/25
+NETWORK_SIZE=128
+DHCP_START=192.168.2.129
+
+# set this to empty if using DHCP or single mode
+# set this to vlan if using vlan
+# set this to quantum if using quantum
+ENABLED_SERVICES=quantum
+EASYSTACK_GIT_URL=http://10.238.152.60/software/openstack
+
+# quantum network parameters
+vlan_number_yd=190
+network_name_yd=net_yd
+subnet_name_yd=subnet_yd
+subnet_ip_yd=50.50.1.0/24
+router_name_yd=router_yd
+
+vlan_number_lt=191
+network_name_lt=net_lt
+subnet_name_lt=subnet_lt
+subnet_ip_lt=50.50.2.0/24
+router_name_lt=router_lt
+
+subnet_start_ip_ext=10.238.152.200
+subnet_end_ip_ext=10.238.152.203
+subnet_ip_ext=10.238.152.0/24
+subnet_name_ext=subnet_ext
+subnet_gateway_ext=10.238.152.2
+network_name_ext=net_ext
